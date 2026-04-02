@@ -1,0 +1,61 @@
+{
+  "sidebar": {
+    "title": "ChatGPT",
+    "subtitle": "AI Assistant",
+    "newChat": "New Chat",
+    "searchPlaceholder": "Search conversations...",
+    "noConversationsFound": "No conversations found",
+    "tryDifferentSearch": "Try a different search term",
+    "settings": "Settings",
+    "theme": "Theme"
+  },
+  "chat": {
+    "title": "ChatGPT",
+    "gpt4": "GPT-4",
+    "latestFirst": "Latest First",
+    "location": "Location",
+    "locationOn": "",
+    "howCanIHelp": "How can I help you today?",
+    "welcomeMessage": "I'm your AI assistant. Ask me anything, and I'll do my best to help you with information, creative tasks, analysis, and more.",
+    "locationAccess": "Location Access",
+    "locationDescription": "Allow ChatGPT to use your location for more accurate results?",
+    "copiedToClipboard": "Copied to clipboard",
+    "messageCopied": "Message content has been copied.",
+    "regeneratingResponse": "Regenerating response",
+    "regenerateDescription": "This feature would regenerate the AI response.",
+    "feedback": "Feedback",
+    "thankYouFeedback": "Thank you for your feedback!",
+    "voiceInputStopped": "Voice input stopped",
+    "voiceInputStarted": "Voice input started",
+    "microphoneOff": "Microphone turned off",
+    "listening": "Listening for your voice...",
+    "speechNotSupported": "Speech recognition is not supported in this browser",
+    "microphoneRequired": "Microphone access is required for speech recognition",
+    "speechError": "Speech recognition error",
+    "ttsError": "Text-to-speech error",
+    "speaking": "Speaking...",
+    "readAloud": "Read aloud",
+    "testVoice": "Test Voice",
+    "voiceSettings": "Voice Settings",
+    "speakingRate": "Speaking Rate",
+    "pitch": "Pitch",
+    "volume": "Volume",
+    "demoResponse": "I'm a demo ChatGPT interface! In a real implementation, this would connect to OpenAI's API to generate responses. Your message was: \"{{message}}\""
+  },
+  "language": {
+    "interfaceLanguage": "Interface Language",
+    "responseLanguage": "Response Language",
+    "autoDetect": "Auto-detect",
+    "on": "ON",
+    "off": "OFF"
+  },
+  "languages": {
+    "en": "English",
+    "hi": "हिन्दी"
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  }
+}

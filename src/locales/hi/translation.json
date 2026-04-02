@@ -1,0 +1,61 @@
+{
+  "sidebar": {
+    "title": "ChatGPT",
+    "subtitle": "AI सहायक",
+    "newChat": "नई चैट",
+    "searchPlaceholder": "बातचीत खोजें...",
+    "noConversationsFound": "कोई बातचीत नहीं मिली",
+    "tryDifferentSearch": "अलग खोज शब्द आज़माएं",
+    "settings": "सेटिंग्स",
+    "theme": "थीम"
+  },
+  "chat": {
+    "title": "ChatGPT",
+    "gpt4": "GPT-4",
+    "latestFirst": "नवीनतम पहले",
+    "location": "स्थान",
+    "locationOn": "स्थान चालू",
+    "howCanIHelp": "आज मैं आपकी कैसे मदद कर सकता हूं?",
+    "welcomeMessage": "मैं आपका AI सहायक हूं। मुझसे कुछ भी पूछें, और मैं जानकारी, रचनात्मक कार्य, विश्लेषण और बहुत कुछ में आपकी मदद करने की पूरी कोशिश करूंगा।",
+    "locationAccess": "स्थान पहुंच",
+    "locationDescription": "अधिक सटीक परिणामों के लिए ChatGPT को आपके स्थान का उपयोग करने की अनुमति दें?",
+    "copiedToClipboard": "क्लिपबोर्ड में कॉपी किया गया",
+    "messageCopied": "संदेश सामग्री कॉपी की गई है।",
+    "regeneratingResponse": "प्रतिक्रिया पुनः उत्पन्न कर रहा है",
+    "regenerateDescription": "यह सुविधा AI प्रतिक्रिया को पुनः उत्पन्न करेगी।",
+    "feedback": "फीडबैक",
+    "thankYouFeedback": "आपके फीडबैक के लिए धन्यवाद!",
+    "voiceInputStopped": "आवाज इनपुट बंद",
+    "voiceInputStarted": "आवाज इनपुट शुरू",
+    "microphoneOff": "माइक्रोफोन बंद",
+    "listening": "आपकी आवाज सुन रहा हूं...",
+    "speechNotSupported": "इस ब्राउज़र में स्पीच रिकग्निशन समर्थित नहीं है",
+    "microphoneRequired": "स्पीच रिकग्निशन के लिए माइक्रोफोन पहुंच आवश्यक है",
+    "speechError": "स्पीच रिकग्निशन त्रुटि",
+    "ttsError": "टेक्स्ट-टू-स्पीच त्रुटि",
+    "speaking": "बोल रहा है...",
+    "readAloud": "जोर से पढ़ें",
+    "testVoice": "आवाज टेस्ट करें",
+    "voiceSettings": "आवाज सेटिंग्स",
+    "speakingRate": "बोलने की गति",
+    "pitch": "स्वर",
+    "volume": "आवाज़",
+    "demoResponse": "मैं एक डेमो ChatGPT इंटरफेस हूं! वास्तविक कार्यान्वयन में, यह OpenAI के API से जुड़कर प्रतिक्रियाएं उत्पन्न करेगा। आपका संदेश था: \"{{message}}\""
+  },
+  "language": {
+    "interfaceLanguage": "इंटरफेस भाषा",
+    "responseLanguage": "प्रतिक्रिया भाषा",
+    "autoDetect": "स्वचालित पहचान",
+    "on": "चालू",
+    "off": "बंद"
+  },
+  "languages": {
+    "en": "English",
+    "hi": "हिन्दी"
+  },
+  "theme": {
+    "light": "हल्का",
+    "dark": "गहरा",
+    "system": "सिस्टम"
+  }
+}
