@@ -13,14 +13,15 @@ import NotFound from "./pages/NotFound";
 import SidebarLayout from "./components/SidebarLayout";
 import { ChatProvider, useChat } from "./contexts/ChatContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import { AuthProvider } from "./contexts/AuthContext";       // ← NEW
-import ProtectedRoute from "./components/ProtectedRoute";   // ← NEW
+import { AuthProvider } from "./contexts/AuthContext"; // ← NEW
+import ProtectedRoute from "./components/ProtectedRoute"; // ← NEW
 import Auth from "./pages/Auth";
 import Welcome from "./pages/Welcome";
 import OTPVerification from "./pages/Otp";
 import FindDoctor from "./pages/FindDoctor";
 import OralDiseaseDetector from "./pages/OralDiseaseDetector";
 import SkinDiseaseDetector from "./pages/SkinDiseaseDetector";
+import SkinCheck from "./pages/SkinCheck";
 
 const queryClient = new QueryClient();
 
@@ -38,7 +39,12 @@ function AppContent() {
 
   const handleNewChat = () => {
     const newId = (conversations.length + 1).toString();
-    addConversation({ id: newId, title: "New Chat", timestamp: "Just now", messages: [] });
+    addConversation({
+      id: newId,
+      title: "New Chat",
+      timestamp: "Just now",
+      messages: [],
+    });
     setActiveConversationId(newId);
   };
 
@@ -68,46 +74,109 @@ const App = () => {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TooltipProvider>
-          <AuthProvider>                        {/* ← wraps everything */}
+          <AuthProvider>
+            {" "}
+            {/* ← wraps everything */}
             <ChatProvider>
               <BrowserRouter>
                 <Toaster />
                 <Sonner />
                 <Routes>
                   {/* ── Public routes ── */}
-                  <Route path="/"       element={<Welcome />} />
-                  <Route path="/auth"   element={<Auth />} />
+                  <Route path="/" element={<Welcome />} />
+                  <Route path="/auth" element={<Auth />} />
                   <Route path="/verify" element={<OTPVerification />} />
 
                   {/* ── Protected routes (login required) ── */}
-                  <Route path="/chat" element={
-                    <ProtectedRoute><AppContent /></ProtectedRoute>
-                  } />
-                  <Route path="/health" element={
-                    <ProtectedRoute><HealthData /></ProtectedRoute>
-                  } />
-                  <Route path="/dashboard/overview" element={
-                    <ProtectedRoute><Overview /></ProtectedRoute>
-                  } />
-                  <Route path="/dashboard/analytics" element={
-                    <ProtectedRoute><Analytics /></ProtectedRoute>
-                  } />
-                  <Route path="/dashboard/news" element={
-                    <ProtectedRoute><NewsDash /></ProtectedRoute>
-                  } />
-                  <Route path="/dashboard/alerts" element={
-                    <ProtectedRoute><AlertsDash /></ProtectedRoute>
-                  } />
-                  <Route path="/find-doctor" element={
-                    <ProtectedRoute><FindDoctor /></ProtectedRoute>
-                  } />
-                  <Route path="/oral-detect" element={
-                    <ProtectedRoute><OralDiseaseDetector /></ProtectedRoute>
-                  } />
-                  <Route path="/skin-detect" element={
-                    <ProtectedRoute><SkinDiseaseDetector /></ProtectedRoute>
-                  } />
+                  <Route
+                    path="/chat"
+                    element={
+                      <ProtectedRoute>
+                        <AppContent />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/health"
+                    element={
+                      <ProtectedRoute>
+                        <HealthData />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/dashboard/overview"
+                    element={
+                      <ProtectedRoute>
+                        <Overview />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/dashboard/analytics"
+                    element={
+                      <ProtectedRoute>
+                        <Analytics />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/dashboard/news"
+                    element={
+                      <ProtectedRoute>
+                        <NewsDash />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/dashboard/alerts"
+                    element={
+                      <ProtectedRoute>
+                        <AlertsDash />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/find-doctor"
+                    element={
+                      <ProtectedRoute>
+                        <FindDoctor />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/oral-detect"
+                    element={
+                      <ProtectedRoute>
+                        <OralDiseaseDetector />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/skin-detect"
+                    element={
+                      <ProtectedRoute>
+                        <SkinDiseaseDetector />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/skin-detect"
+                    element={
+                      <ProtectedRoute>
+                        <SkinDiseaseDetector />
+                      </ProtectedRoute>
+                    }
+                  />
 
+                  <Route
+                    path="/skin-check"
+                    element={
+                      <ProtectedRoute>
+                        <SkinCheck />
+                      </ProtectedRoute>
+                    }
+                  />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </BrowserRouter>

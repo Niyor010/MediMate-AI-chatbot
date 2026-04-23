@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { ScanFace } from "lucide-react";
 import {
   Plus,
   MessageSquare,
@@ -61,14 +62,16 @@ function NavItem({
         "flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer group",
         isActive
           ? "bg-primary/15 text-primary"
-          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
       )}
     >
       <Icon
         className={cn(
           "flex-shrink-0 transition-colors duration-200",
           expanded ? "h-4 w-4" : "h-5 w-5",
-          isActive ? "text-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+          isActive
+            ? "text-primary"
+            : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground",
         )}
       />
       {expanded && (
@@ -132,11 +135,17 @@ export default function Sidebar({
   }, [onNewChat]);
 
   const navItems = [
-    { to: "/health",              icon: MessageSquare, label: "Health Dashboard" },
-    { to: "/dashboard/overview",  icon: BarChart2,     label: "Overview"          },
-    { to: "/dashboard/analytics", icon: Activity,      label: "Analytics"         },
-    { to: "/dashboard/news",      icon: Newspaper,     label: "News"              },
-    { to: "https://www.data.gov.in/", icon: Bell,      label: "Vaccination Alerts", external: true },
+    { to: "/health", icon: MessageSquare, label: "Health Dashboard" },
+    { to: "/dashboard/overview", icon: BarChart2, label: "Overview" },
+    { to: "/dashboard/analytics", icon: Activity, label: "Analytics" },
+    { to: "/dashboard/news", icon: Newspaper, label: "News" },
+    { to: "/skin-check", icon: ScanFace, label: "Skin Check" },
+    {
+      to: "https://www.data.gov.in/",
+      icon: Bell,
+      label: "Vaccination Alerts",
+      external: true,
+    },
   ];
 
   const sidebarContent = (
@@ -144,21 +153,27 @@ export default function Sidebar({
       className={cn(
         "flex flex-col h-full transition-all duration-300 ease-in-out",
         "bg-[hsl(var(--sidebar-background))] border-r border-[hsl(var(--sidebar-border))]",
-        expanded || isMobile ? "w-64" : "w-16"
+        expanded || isMobile ? "w-80" : "w-20",
       )}
-      onMouseEnter={() => { if (!isMobile) setExpanded(true); }}
-      onMouseLeave={() => { if (!isMobile && !profileOpen) setExpanded(false); }}
+      onMouseEnter={() => {
+        if (!isMobile) setExpanded(true);
+      }}
+      onMouseLeave={() => {
+        if (!isMobile && !profileOpen) setExpanded(false);
+      }}
     >
       {/* ── Logo / Brand ── */}
-      <div className={cn(
-        "flex items-center gap-3 px-3 py-4 border-b border-[hsl(var(--sidebar-border))]",
-        expanded || isMobile ? "justify-start" : "justify-center"
-      )}>
+      <div
+        className={cn(
+          "flex items-center gap-4 px-4 py-6 border-b border-[hsl(var(--sidebar-border))]",
+          expanded || isMobile ? "justify-start" : "justify-center",
+        )}
+      >
         <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center flex-shrink-0 shadow-md shadow-primary/20">
           <Heart className="w-4 h-4 text-white fill-white" />
         </div>
         {(expanded || isMobile) && (
-          <span className="font-bold text-base text-sidebar-foreground tracking-tight">
+          <span className="font-bold text-xl text-sidebar-foreground tracking-tight">
             Medi<span className="text-primary">Mate</span>
           </span>
         )}
@@ -175,17 +190,26 @@ export default function Sidebar({
       </div>
 
       {/* ── New Chat Button ── */}
-      <div className={cn("px-3 py-4", expanded || isMobile ? "" : "flex justify-center")}>
+      <div
+        className={cn(
+          "px-3 py-4",
+          expanded || isMobile ? "" : "flex justify-center",
+        )}
+      >
         <Button
           onClick={onNewChat}
           size="sm"
           className={cn(
             "bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm shadow-primary/20 transition-all duration-200",
-            expanded || isMobile ? "w-full justify-start gap-2" : "w-10 h-10 p-0 rounded-xl"
+            expanded || isMobile
+              ? "w-full justify-start gap-2"
+              : "w-10 h-10 p-0 rounded-xl",
           )}
         >
           <Plus className="h-4 w-4 flex-shrink-0" />
-          {(expanded || isMobile) && <span className="text-sm font-medium">New Chat</span>}
+          {(expanded || isMobile) && (
+            <span className="text-sm font-medium">New Chat</span>
+          )}
         </Button>
       </div>
 
@@ -198,7 +222,9 @@ export default function Sidebar({
             Navigation
           </p>
         )}
-        <nav className={cn("space-y-0.5", expanded || isMobile ? "px-2" : "px-2")}>
+        <nav
+          className={cn("space-y-0.5", expanded || isMobile ? "px-2" : "px-2")}
+        >
           {navItems.map((item) => (
             <NavItem
               key={item.to}
@@ -215,23 +241,29 @@ export default function Sidebar({
       <Separator className="bg-[hsl(var(--sidebar-border))] mx-3 w-auto" />
 
       {/* ── Bottom Controls ── */}
-      <div className={cn(
-        "py-3 flex flex-col gap-2",
-        expanded || isMobile ? "px-2" : "px-2 items-center"
-      )}>
+      <div
+        className={cn(
+          "py-3 flex flex-col gap-2",
+          expanded || isMobile ? "px-2" : "px-2 items-center",
+        )}
+      >
         {/* Theme toggle */}
-        <div className={cn(
-          "flex items-center",
-          expanded || isMobile ? "px-1" : "justify-center"
-        )}>
+        <div
+          className={cn(
+            "flex items-center",
+            expanded || isMobile ? "px-1" : "justify-center",
+          )}
+        >
           <ThemeToggle isHovering={expanded || isMobile} />
         </div>
 
         {/* Profile */}
-        <div className={cn(
-          "flex items-center",
-          expanded || isMobile ? "px-1" : "justify-center"
-        )}>
+        <div
+          className={cn(
+            "flex items-center",
+            expanded || isMobile ? "px-1" : "justify-center",
+          )}
+        >
           <ProfileDropdown
             expanded={expanded || isMobile}
             onOpenChange={(open) => {
@@ -278,7 +310,7 @@ export default function Sidebar({
           <div
             className={cn(
               "fixed top-0 left-0 h-full z-40 transition-transform duration-300 ease-in-out",
-              isOpen ? "translate-x-0" : "-translate-x-full"
+              isOpen ? "translate-x-0" : "-translate-x-full",
             )}
           >
             {sidebarContent}
@@ -287,9 +319,7 @@ export default function Sidebar({
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {children}
-      </div>
+      <div className="flex-1 flex flex-col overflow-hidden">{children}</div>
     </div>
   );
 }
