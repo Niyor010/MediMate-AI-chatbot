@@ -1,19 +1,19 @@
 import {
-  useState,
-  useRef,
-  KeyboardEvent,
-  ClipboardEvent,
+  useState, useRef, KeyboardEvent, ClipboardEvent,
 } from "react";
 import { useSpeech } from "@/hooks/useSpeech";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Send, Mic, Paperclip, Image as ImageIcon, X, Loader2,
-  CheckCircle2, AlertTriangle, AlertCircle, Stethoscope, Microscope, Eye,
+  Send, Mic, Paperclip, Image as ImageIcon, X,
+  Loader2, CheckCircle2, AlertTriangle, AlertCircle,
+  Stethoscope, MapPin, Navigation, Phone, Microscope,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const ML_SERVER = "http://localhost:8000";
+const ML_SERVER    = "http://localhost:8000";
+const GEOAPIFY_KEY   = "8d773395039548c2b4a7b7f3731d8753"; 
+// ← paste your Geoapify key here
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
@@ -31,7 +31,15 @@ interface Prediction {
   all_predictions: { label: string; confidence: number }[];
 }
 
-type AnalysisType = "oral" | "skin" | "eye";
+interface NearbyDoctor {
+  place_id: string;
+  name: string;
+  address: string;
+  distance?: number;
+  phone?: string;
+  lat: number;
+  lon: number;
+}
 
 const severityConfig = {
   none:     { color: "text-green-500",  bg: "bg-green-500/10",  border: "border-green-500/20",  icon: CheckCircle2,  label: "Healthy"       },
@@ -41,52 +49,45 @@ const severityConfig = {
   unknown:  { color: "text-muted-foreground", bg: "bg-muted/50", border: "border-border",       icon: AlertCircle,   label: "Unknown"       },
 };
 
-const typeConfig = {
-  oral: { label: "Oral / Dental", emoji: "🦷", icon: Stethoscope, color: "text-primary",    hover: "hover:bg-primary/10 hover:border-primary/40",    endpoint: "/predict/oral", chatEmoji: "🦷", chatLabel: "Oral Disease Analysis"  },
-  skin: { label: "Skin / Derma",  emoji: "🩺", icon: Microscope,  color: "text-pink-500",   hover: "hover:bg-pink-500/10 hover:border-pink-500/40",   endpoint: "/predict/skin", chatEmoji: "🩺", chatLabel: "Skin Disease Analysis"  },
-  eye:  { label: "Eye / Vision",  emoji: "👁️", icon: Eye,         color: "text-cyan-500",   hover: "hover:bg-cyan-500/10 hover:border-cyan-500/40",   endpoint: "/predict/eye",  chatEmoji: "👁️", chatLabel: "Eye Disease Analysis"   },
-};
+type AnalysisType = "oral" | "skin";
 
 export function ChatInput({
   onSendMessage,
   isLoading = false,
   placeholder = "Ask MediMate anything about your health…",
 }: ChatInputProps) {
-  const [message, setMessage] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [attachments, setAttachments] = useState<
-    { id: string; name: string; type: string; dataUrl: string }[]
-  >([]);
+  const [message, setMessage]                   = useState("");
+  const textareaRef                             = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef                           = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging]             = useState(false);
+  const [attachments, setAttachments]           = useState<{ id: string; name: string; type: string; dataUrl: string }[]>([]);
   const [interimTranscript, setInterimTranscript] = useState("");
 
-  // ── Analysis state ──────────────────────────────────────────────────────────
-  const [pendingFile, setPendingFile]         = useState<File | null>(null);
-  const [showTypeSelector, setShowTypeSelector] = useState(false);
-  const [analysisType, setAnalysisType]       = useState<AnalysisType | null>(null);
-  const [analysisImage, setAnalysisImage]     = useState<string | null>(null);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
-  const [analysisResult, setAnalysisResult]   = useState<Prediction | null>(null);
-  const [analysisError, setAnalysisError]     = useState<string | null>(null);
-  const [showPanel, setShowPanel]             = useState(false);
+  // ── Analysis state ────────────────────────────────────────────────────────
+  const [showTypeSelector, setShowTypeSelector] = useState(false); // show oral/skin picker
+  const [analysisType, setAnalysisType]         = useState<AnalysisType>("oral");
+  const [analysisImage, setAnalysisImage]       = useState<string | null>(null);
+  const [analysisLoading, setAnalysisLoading]   = useState(false);
+  const [analysisResult, setAnalysisResult]     = useState<Prediction | null>(null);
+  const [analysisError, setAnalysisError]       = useState<string | null>(null);
+  const [showPanel, setShowPanel]               = useState(false);
+
+  // ── Nearby doctors state ──────────────────────────────────────────────────
+  const [doctors, setDoctors]               = useState<NearbyDoctor[]>([]);
+  const [doctorsLoading, setDoctorsLoading] = useState(false);
+  const [doctorsError, setDoctorsError]     = useState<string | null>(null);
 
   const { isListening: speechIsListening, startListening, stopListening } = useSpeech({
     onTranscript: (transcript, isFinal) => {
-      if (isFinal) {
-        setMessage((prev) => (prev ? prev + "\n" + transcript : transcript));
-        adjustTextareaHeight();
-        setInterimTranscript("");
-      } else {
-        setInterimTranscript(transcript);
-      }
+      if (isFinal) { setMessage(p => p ? p + "\n" + transcript : transcript); adjustTextareaHeight(); setInterimTranscript(""); }
+      else setInterimTranscript(transcript);
     },
     onError: () => {},
   });
 
   const handleSend = () => {
     if (!isLoading) {
-      try { if (speechIsListening) stopListening(); } catch (e) {}
+      try { if (speechIsListening) stopListening(); } catch {}
       const parts: string[] = [];
       if (message.trim()) parts.push(message.trim());
       for (const a of attachments) {
@@ -96,8 +97,7 @@ export function ChatInput({
       const composed = parts.join("\n\n");
       if (composed.trim()) {
         onSendMessage(composed.trim());
-        setMessage("");
-        setAttachments([]);
+        setMessage(""); setAttachments([]);
         if (textareaRef.current) textareaRef.current.style.height = "auto";
       }
     }
@@ -116,144 +116,227 @@ export function ChatInput({
 
   const readFileAsDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = reject;
+      r.readAsDataURL(file);
     });
 
   const handleDropFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+    if (!files) return;
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      try {
-        const dataUrl = await readFileAsDataUrl(f);
-        setAttachments((prev) => [...prev, { id: `${Date.now()}-${i}`, name: f.name, type: f.type, dataUrl }]);
-      } catch (e) {
-        setAttachments((prev) => [...prev, { id: `${Date.now()}-${i}`, name: f.name, type: f.type || "file", dataUrl: "" }]);
-      }
+      const dataUrl = await readFileAsDataUrl(f).catch(() => "");
+      setAttachments(p => [...p, { id: `${Date.now()}-${i}`, name: f.name, type: f.type, dataUrl }]);
     }
     adjustTextareaHeight();
   };
 
-  const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
+  const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const handleDragOver  = (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setIsDragging(true); };
-  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setIsDragging(false);
-    const dt = e.dataTransfer;
-    const text = dt.getData("text");
-    if (text) { setMessage((prev) => (prev ? prev + "\n" + text : text)); adjustTextareaHeight(); }
-    if (dt.files && dt.files.length > 0) handleDropFiles(dt.files);
+    e.preventDefault(); setIsDragging(false);
+    if (e.dataTransfer.getData("text")) { setMessage(p => p ? p + "\n" + e.dataTransfer.getData("text") : e.dataTransfer.getData("text")); adjustTextareaHeight(); }
+    if (e.dataTransfer.files?.length) handleDropFiles(e.dataTransfer.files);
   };
 
   const handlePaste = async (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items;
-    if (!items || items.length === 0) return;
-    let handled = false;
+    if (!items) return;
     for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.kind === "file") {
-        const file = item.getAsFile();
+      if (items[i].kind === "file") {
+        const file = items[i].getAsFile();
         if (file) {
-          handled = true; e.preventDefault();
-          try {
-            const dataUrl = await readFileAsDataUrl(file);
-            setAttachments((prev) => [...prev, { id: `${Date.now()}-p-${i}`, name: file.name || "pasted-image", type: file.type, dataUrl }]);
-          } catch (err) {
-            setAttachments((prev) => [...prev, { id: `${Date.now()}-p-${i}`, name: file.name || "pasted-file", type: file.type || "file", dataUrl: "" }]);
-          }
+          e.preventDefault();
+          const dataUrl = await readFileAsDataUrl(file).catch(() => "");
+          setAttachments(p => [...p, { id: `${Date.now()}-p`, name: file.name || "pasted-image", type: file.type, dataUrl }]);
         }
       }
     }
-    if (!handled) {
-      const text = e.clipboardData?.getData("text/plain") || "";
-      if (text.startsWith("data:") && text.includes("image")) {
-        e.preventDefault();
-        setAttachments((prev) => [...prev, { id: `${Date.now()}-p-t`, name: "pasted-image", type: "image", dataUrl: text }]);
-      }
+  };
+
+  // ── Fetch nearby doctors ──────────────────────────────────────────────────
+  const fetchNearbyDoctors = async (type: AnalysisType, severity: string) => {
+    if (severity === "none") return;
+    setDoctorsLoading(true);
+    setDoctors([]);
+    setDoctorsError(null);
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 8000 })
+      );
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      const category = type === "oral"
+        ? "healthcare.dentist,healthcare.clinic_or_praxis"
+        : "healthcare.clinic_or_praxis,healthcare.hospital";
+
+      const url = `https://api.geoapify.com/v2/places` +
+        `?categories=${encodeURIComponent(category)}` +
+        `&filter=circle:${lon},${lat},5000` +
+        `&bias=proximity:${lon},${lat}` +
+        `&limit=3&apiKey=${GEOAPIFY_KEY}`;
+
+      const res  = await fetch(url);
+      const data = await res.json();
+
+      if (data.statusCode === 401) throw new Error("Invalid Geoapify API key");
+
+      const results: NearbyDoctor[] = (data.features || [])
+        .map((f: any) => ({
+          place_id: f.properties.place_id || `${Math.random()}`,
+          name:     f.properties.name || "Clinic",
+          address:  f.properties.formatted || "",
+          distance: f.properties.distance,
+          phone:    f.properties.contact?.phone,
+          lat:      f.geometry.coordinates[1],
+          lon:      f.geometry.coordinates[0],
+        }))
+        .filter((d: NearbyDoctor) => d.name && d.address);
+
+      setDoctors(results);
+    } catch (err: any) {
+      setDoctorsError(err.message || "Could not fetch nearby doctors.");
+    } finally {
+      setDoctorsLoading(false);
     }
   };
 
-  // ── Image icon clicked ─────────────────────────────────────────────────────
-  const handleImageIconClick = () => imageInputRef.current?.click();
-
-  // ── File selected → show type selector ────────────────────────────────────
-  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (!f.type.startsWith("image/")) { setAnalysisError("Please select an image file."); return; }
-    setPendingFile(f);
+  // ── Step 1: Click image icon → show oral/skin selector ───────────────────
+  const handleImageIconClick = () => {
+    setShowTypeSelector(true);
+    setShowPanel(false);
     setAnalysisResult(null);
     setAnalysisError(null);
-    setShowTypeSelector(true);
+    setDoctors([]);
+  };
+
+  // ── Step 2: User picks oral or skin → open file picker ───────────────────
+  const selectType = (type: AnalysisType) => {
+    setAnalysisType(type);
+    setShowTypeSelector(false);
+    setTimeout(() => imageInputRef.current?.click(), 100);
+  };
+
+  // ── Step 3: File selected → analyze + fetch doctors ──────────────────────
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f || !f.type.startsWith("image/")) return;
+
+    setAnalysisError(null);
+    setAnalysisResult(null);
     setShowPanel(true);
-    setAnalysisType(null);
+    setDoctors([]);
+
     const reader = new FileReader();
     reader.onload = (ev) => setAnalysisImage(ev.target?.result as string);
     reader.readAsDataURL(f);
-    e.target.value = "";
-  };
 
-  // ── User picks type → run analysis ────────────────────────────────────────
-  const handleTypeSelect = async (type: AnalysisType) => {
-    if (!pendingFile) return;
-    setAnalysisType(type);
-    setShowTypeSelector(false);
-    await analyzeImage(pendingFile, type);
-  };
-
-  const analyzeImage = async (f: File, type: AnalysisType) => {
     setAnalysisLoading(true);
-    setAnalysisError(null);
     try {
       const formData = new FormData();
       formData.append("file", f);
-      const res = await fetch(`${ML_SERVER}${typeConfig[type].endpoint}`, { method: "POST", body: formData });
+      const endpoint = analysisType === "oral" ? "predict/oral" : "predict/skin";
+      const res  = await fetch(`${ML_SERVER}/${endpoint}`, { method: "POST", body: formData });
       if (!res.ok) { const err = await res.json(); throw new Error(err.detail || "Prediction failed"); }
       const data: Prediction = await res.json();
       setAnalysisResult(data);
-      const sev = severityConfig[data.severity];
-      const cfg = typeConfig[type];
+
+      const sev   = severityConfig[data.severity];
+      const emoji = analysisType === "oral" ? "🦷" : "🩺";
+      const label = analysisType === "oral" ? "Oral Disease Analysis" : "Skin Disease Analysis";
       onSendMessage(
-        `${cfg.chatEmoji} **${cfg.chatLabel} Result**\n\n` +
-        `**Detected:** ${data.prediction} (${data.confidence.toFixed(1)}% confidence)\n` +
-        `**Severity:** ${sev.label}\n\n` +
-        `**Description:** ${data.description}\n\n` +
+        `${emoji} **${label}**\n\n` +
+        `**Detected:** ${data.prediction} (${data.confidence.toFixed(1)}%)\n` +
+        `**Severity:** ${sev.label}\n` +
+        `**Description:** ${data.description}\n` +
         `**Recommendation:** ${data.recommendation}`
       );
+
+      await fetchNearbyDoctors(analysisType, data.severity);
     } catch (err: any) {
       setAnalysisError(err.message || "Could not connect to ML server on port 8000.");
     } finally {
       setAnalysisLoading(false);
     }
+    e.target.value = "";
   };
 
   const closePanel = () => {
     setShowPanel(false); setShowTypeSelector(false);
-    setAnalysisImage(null); setPendingFile(null);
-    setAnalysisResult(null); setAnalysisError(null); setAnalysisType(null);
+    setAnalysisImage(null); setAnalysisResult(null);
+    setAnalysisError(null); setDoctors([]); setDoctorsError(null);
   };
 
-  const activeCfg = analysisType ? typeConfig[analysisType] : null;
+  const getDirections = (doc: NearbyDoctor) =>
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${doc.lat},${doc.lon}`, "_blank");
+
+  const isOral    = analysisType === "oral";
+  const accentCls = isOral ? "text-primary" : "text-pink-500";
+  const accentBg  = isOral ? "bg-primary/10" : "bg-pink-500/10";
+  const accentBtn = isOral ? "bg-primary hover:bg-primary/90" : "bg-pink-500 hover:bg-pink-600";
 
   return (
-    <div className="border rounded-2xl p-3 bg-[hsl(var(--card))] border-[hsl(var(--border))] text-[hsl(var(--card-foreground))]">
+    <div className="border rounded-2xl p-3 bg-[hsl(var(--card))] border-[hsl(var(--border))]">
 
-      {/* ── Analysis Panel ── */}
+      {/* ── Step 1: Type selector (oral / skin) ── */}
+      {showTypeSelector && (
+        <div className="px-1 pt-2 pb-3">
+          <div className="bg-background border border-border rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm font-semibold text-foreground">What would you like to analyze?</p>
+              <button onClick={() => setShowTypeSelector(false)} className="w-6 h-6 rounded-full hover:bg-muted flex items-center justify-center">
+                <X className="w-3.5 h-3.5 text-muted-foreground" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Oral option */}
+              <button
+                onClick={() => selectType("oral")}
+                className="flex flex-col items-center gap-3 p-4 bg-primary/5 border-2 border-primary/20 hover:border-primary/60 hover:bg-primary/10 rounded-2xl transition-all duration-200 group"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20">
+                  <Stethoscope className="w-6 h-6 text-primary" />
+                </div>
+                <div className="text-center">
+                  <p className="font-semibold text-sm text-foreground">🦷 Oral</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Teeth, gums & mouth</p>
+                </div>
+              </button>
+
+              {/* Skin option */}
+              <button
+                onClick={() => selectType("skin")}
+                className="flex flex-col items-center gap-3 p-4 bg-pink-500/5 border-2 border-pink-500/20 hover:border-pink-500/60 hover:bg-pink-500/10 rounded-2xl transition-all duration-200 group"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-pink-500/10 flex items-center justify-center group-hover:bg-pink-500/20">
+                  <Microscope className="w-6 h-6 text-pink-500" />
+                </div>
+                <div className="text-center">
+                  <p className="font-semibold text-sm text-foreground">🩺 Skin</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Rashes, lesions & conditions</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 2 & 3: Analysis panel + nearby doctors ── */}
       {showPanel && (
-        <div className="px-3 pt-3 pb-2">
+        <div className="px-1 pt-2 pb-3">
           <div className="bg-background border border-border rounded-2xl overflow-hidden">
 
-            {/* Header */}
+            {/* Panel header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <div className="flex items-center gap-2">
-                {activeCfg
-                  ? <activeCfg.icon className={cn("w-4 h-4", activeCfg.color)} />
-                  : <ImageIcon className="w-4 h-4 text-primary" />
+                {isOral
+                  ? <Stethoscope className="w-4 h-4 text-primary" />
+                  : <Microscope className="w-4 h-4 text-pink-500" />
                 }
                 <span className="text-sm font-semibold text-foreground">
-                  {activeCfg ? activeCfg.chatLabel : "Disease Analysis"}
+                  {isOral ? "🦷 Oral" : "🩺 Skin"} Disease Analysis
                 </span>
                 {analysisLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />}
               </div>
@@ -262,59 +345,26 @@ export function ChatInput({
               </button>
             </div>
 
+            {/* Image + result */}
             <div className="flex gap-3 p-4">
-              {/* Image preview */}
               {analysisImage && (
                 <img src={analysisImage} alt="Analysis" className="w-20 h-20 rounded-xl object-cover flex-shrink-0 border border-border" />
               )}
-
               <div className="flex-1 min-w-0">
-
-                {/* ── Type selector: Oral / Skin / Eye ── */}
-                {showTypeSelector && (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-foreground">What type of image is this?</p>
-                    <div className="flex gap-2">
-                      {(Object.keys(typeConfig) as AnalysisType[]).map((type) => {
-                        const cfg = typeConfig[type];
-                        const Icon = cfg.icon;
-                        return (
-                          <button
-                            key={type}
-                            onClick={() => handleTypeSelect(type)}
-                            className={cn(
-                              "flex-1 flex flex-col items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl border border-border bg-muted/40 transition-all text-xs font-medium text-foreground",
-                              cfg.hover
-                            )}
-                          >
-                            <Icon className={cn("w-4 h-4", cfg.color)} />
-                            <span>{cfg.emoji} {cfg.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Loading */}
                 {analysisLoading && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                    Analyzing your {analysisType} image...
+                    Analyzing your image...
                   </div>
                 )}
-
-                {/* Error */}
                 {analysisError && (
                   <div className="flex items-start gap-2 text-xs text-destructive">
                     <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                     {analysisError}
                   </div>
                 )}
-
-                {/* Result */}
                 {analysisResult && (() => {
-                  const sev = severityConfig[analysisResult.severity];
+                  const sev  = severityConfig[analysisResult.severity];
                   const Icon = sev.icon;
                   return (
                     <div className="space-y-2">
@@ -323,99 +373,149 @@ export function ChatInput({
                         {analysisResult.prediction} — {analysisResult.confidence.toFixed(1)}% · {sev.label}
                       </div>
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className={cn("h-full rounded-full transition-all duration-700",
-                            analysisResult.severity === "none"     ? "bg-green-500"  :
-                            analysisResult.severity === "low"      ? "bg-yellow-500" :
-                            analysisResult.severity === "moderate" ? "bg-orange-500" : "bg-red-500"
-                          )}
-                          style={{ width: `${analysisResult.confidence}%` }}
-                        />
+                        <div className={cn("h-full rounded-full transition-all duration-700",
+                          analysisResult.severity === "none" ? "bg-green-500" :
+                          analysisResult.severity === "low"  ? "bg-yellow-500" :
+                          analysisResult.severity === "moderate" ? "bg-orange-500" : "bg-red-500"
+                        )} style={{ width: `${analysisResult.confidence}%` }} />
                       </div>
-                      <div className="flex gap-2 flex-wrap">
+                      <div className="flex gap-1.5 flex-wrap">
                         {analysisResult.all_predictions.slice(0, 3).map((p, i) => (
                           <span key={p.label} className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
                             {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {p.label} {p.confidence.toFixed(0)}%
                           </span>
                         ))}
                       </div>
-                      <p className="text-xs text-muted-foreground">✅ Result sent to chat</p>
+                      <p className="text-[11px] text-muted-foreground">✅ Result sent to chat</p>
                     </div>
                   );
                 })()}
               </div>
             </div>
+
+            {/* Nearby doctors */}
+            {analysisResult && analysisResult.severity !== "none" && (
+              <div className="border-t border-border px-4 py-3">
+                <div className="flex items-center gap-2 mb-3">
+                  <MapPin className={`w-3.5 h-3.5 ${accentCls}`} />
+                  <p className="text-xs font-semibold text-foreground">
+                    Nearby {isOral ? "Dentists" : "Dermatologists"}
+                  </p>
+                  {doctorsLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-primary ml-auto" />}
+                </div>
+
+                {doctorsLoading && (
+                  <p className="text-xs text-muted-foreground">Finding specialists near you...</p>
+                )}
+
+                {!doctorsLoading && doctorsError && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-destructive">{doctorsError}</p>
+                    {doctorsError.includes("API key") && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Get free key at <a href="https://myprojects.geoapify.com" target="_blank" className="text-primary underline">myprojects.geoapify.com</a> and update GEOAPIFY_KEY in ChatInput.tsx
+                      </p>
+                    )}
+                    <Button size="sm" variant="outline" onClick={() => fetchNearbyDoctors(analysisType, analysisResult.severity)}
+                      className="h-6 text-[10px] px-2 rounded-lg">Retry</Button>
+                  </div>
+                )}
+
+                {!doctorsLoading && !doctorsError && doctors.length === 0 && (
+                  <Button size="sm" onClick={() => fetchNearbyDoctors(analysisType, analysisResult.severity)}
+                    className={`h-7 text-xs rounded-xl gap-1.5 w-full text-white ${accentBtn}`}>
+                    <MapPin className="w-3.5 h-3.5" /> Find {isOral ? "Dentists" : "Dermatologists"} Near Me
+                  </Button>
+                )}
+
+                {!doctorsLoading && doctors.length > 0 && (
+                  <div className="space-y-2">
+                    {doctors.map(doc => (
+                      <div key={doc.place_id} className="flex items-center gap-2 p-2 bg-muted/40 rounded-xl">
+                        <div className={`w-7 h-7 rounded-lg ${accentBg} flex items-center justify-center flex-shrink-0`}>
+                          {isOral
+                            ? <Stethoscope className={`w-3.5 h-3.5 ${accentCls}`} />
+                            : <Microscope  className={`w-3.5 h-3.5 ${accentCls}`} />
+                          }
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-foreground truncate">{doc.name}</p>
+                          {doc.distance !== undefined && (
+                            <p className={`text-[10px] ${accentCls}`}>🚶 {(doc.distance / 1000).toFixed(1)}km away</p>
+                          )}
+                        </div>
+                        <div className="flex gap-1 flex-shrink-0">
+                          <Button size="sm" onClick={() => getDirections(doc)}
+                            className={`h-6 text-[10px] px-2 rounded-lg gap-1 text-white ${accentBtn}`}>
+                            <Navigation className="w-3 h-3" /> Go
+                          </Button>
+                          {doc.phone && (
+                            <Button size="sm" variant="outline" onClick={() => window.open(`tel:${doc.phone}`)}
+                              className="h-6 text-[10px] px-2 rounded-lg">
+                              <Phone className="w-3 h-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* ── Main input area ── */}
+      {/* ── Main text input ── */}
       <div className="px-3 pb-3">
         <div
-          className="relative flex items-end gap-3 p-4 border border-[hsl(var(--border))] rounded-2xl bg-[hsl(var(--card))/0.5] backdrop-blur-sm focus-within:ring-1 focus-within:ring-[hsl(var(--ring))] transition-smooth"
-          onDragEnter={handleDragEnter}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          className="relative flex items-end gap-3 p-4 border border-[hsl(var(--border))] rounded-2xl bg-[hsl(var(--card))/0.5] backdrop-blur-sm focus-within:ring-1 focus-within:ring-[hsl(var(--ring))]"
+          onDragEnter={handleDragEnter} onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave} onDrop={handleDrop}
         >
           {isDragging && (
-            <div className="absolute inset-0 z-40 flex items-center justify-center bg-[hsl(var(--foreground)/0.06)] backdrop-blur-sm rounded-2xl">
-              <div className="text-sm text-[hsl(var(--foreground)/0.8)]">Drop files to attach</div>
+            <div className="absolute inset-0 z-40 flex items-center justify-center bg-foreground/5 backdrop-blur-sm rounded-2xl">
+              <p className="text-sm text-foreground/70">Drop files to attach</p>
             </div>
           )}
 
-          {/* Paperclip */}
           <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 hover:bg-[hsl(var(--hover-overlay))]">
             <Paperclip className="h-4 w-4" />
           </Button>
 
-          {/* Text input */}
           <div className="flex-1 min-h-[24px] max-h-[200px]">
             <Textarea
               ref={textareaRef}
               value={message}
-              onChange={(e) => { setMessage(e.target.value); adjustTextareaHeight(); }}
+              onChange={e => { setMessage(e.target.value); adjustTextareaHeight(); }}
               onPaste={handlePaste}
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
-              className={cn(
-                "flex-1 min-h-[24px] max-h-[200px] resize-none border-0 bg-transparent p-0 focus-visible:ring-0 focus-visible:ring-offset-0",
-                "placeholder:text-muted-foreground"
-              )}
+              className="flex-1 min-h-[24px] max-h-[200px] resize-none border-0 bg-transparent p-0 focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground"
               disabled={isLoading}
             />
-            {interimTranscript && (
-              <div className="mt-2 text-sm italic text-muted-foreground">{interimTranscript}</div>
-            )}
+            {interimTranscript && <div className="mt-2 text-sm italic text-muted-foreground">{interimTranscript}</div>}
             {attachments.length > 0 && (
-              <div className="mt-3 flex gap-2 items-center overflow-x-auto">
-                {attachments.map((a) => (
+              <div className="mt-3 flex gap-2 overflow-x-auto">
+                {attachments.map(a => (
                   <div key={a.id} className="relative w-20 h-14 rounded-md overflow-hidden border border-border bg-card/30 flex-shrink-0">
-                    {a.dataUrl
-                      ? <img src={a.dataUrl} alt={a.name} className="w-full h-full object-cover" />
-                      : <div className="w-full h-full flex items-center justify-center text-xs px-1 text-muted-foreground">{a.name}</div>
-                    }
-                    <Button variant="ghost" size="icon"
-                      onClick={() => setAttachments((prev) => prev.filter((p) => p.id !== a.id))}
-                      className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-background/80">✕
-                    </Button>
+                    {a.dataUrl ? <img src={a.dataUrl} alt={a.name} className="w-full h-full object-cover" />
+                      : <div className="w-full h-full flex items-center justify-center text-xs px-1 text-muted-foreground">{a.name}</div>}
+                    <Button variant="ghost" size="icon" onClick={() => setAttachments(p => p.filter(x => x.id !== a.id))}
+                      className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-background/80">✕</Button>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Action buttons */}
           <div className="flex items-center gap-1 flex-shrink-0">
-
-            {/* 📷 Smart image analysis — Oral / Skin / Eye */}
+            {/* 📷 Image icon → shows oral/skin selector first */}
             <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
-            <Button
-              variant="ghost" size="icon"
-              onClick={handleImageIconClick}
-              title="Analyze oral, skin, or eye disease from photo"
-              className={cn("h-8 w-8 hover:bg-[hsl(var(--hover-overlay))] relative", showPanel && "bg-primary/10 text-primary")}
-            >
+            <Button variant="ghost" size="icon" onClick={handleImageIconClick} title="Analyze oral or skin disease"
+              className={cn("h-8 w-8 hover:bg-[hsl(var(--hover-overlay))] relative",
+                (showPanel || showTypeSelector) && "bg-primary/10 text-primary"
+              )}>
               {analysisLoading
                 ? <Loader2 className="h-4 w-4 animate-spin text-primary" />
                 : <ImageIcon className="h-4 w-4" />
@@ -425,34 +525,20 @@ export function ChatInput({
               )}
             </Button>
 
-            {/* Mic */}
-            <Button
-              variant={speechIsListening ? "default" : "ghost"}
-              size="icon"
+            <Button variant={speechIsListening ? "default" : "ghost"} size="icon"
               onClick={() => { if (speechIsListening) stopListening(); else startListening(); }}
-              className={cn(
-                "h-8 w-8",
-                speechIsListening
-                  ? "bg-[hsl(var(--destructive))] hover:bg-[hsl(var(--destructive)/0.9)] animate-pulse"
-                  : "hover:bg-[hsl(var(--hover-overlay))]"
-              )}
-              title={speechIsListening ? "Stop voice input" : "Start voice input"}
-            >
+              className={cn("h-8 w-8", speechIsListening
+                ? "bg-[hsl(var(--destructive))] animate-pulse"
+                : "hover:bg-[hsl(var(--hover-overlay))]"
+              )}>
               <Mic className="h-4 w-4" />
             </Button>
 
-            {/* Send */}
-            <Button
-              onClick={handleSend}
-              disabled={!message.trim() || isLoading}
-              size="icon"
-              className={cn(
-                "h-8 w-8 transition-smooth",
-                message.trim() && !isLoading
-                  ? "bg-gradient-to-r from-primary to-[hsl(var(--primary-glow))] hover:opacity-90 hover-glow"
-                  : "bg-muted text-muted-foreground"
-              )}
-            >
+            <Button onClick={handleSend} disabled={!message.trim() || isLoading} size="icon"
+              className={cn("h-8 w-8", message.trim() && !isLoading
+                ? "bg-gradient-to-r from-primary to-[hsl(var(--primary-glow))] hover:opacity-90"
+                : "bg-muted text-muted-foreground"
+              )}>
               <Send className="h-4 w-4" />
             </Button>
           </div>

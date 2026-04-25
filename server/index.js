@@ -61,8 +61,8 @@ io.on("connection", (socket) => {
 
     try {
       const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        systemInstruction: SYSTEM_PROMPT,
+       model: "gemini-1.5-flash" ,
+              systemInstruction: SYSTEM_PROMPT,
       });
 
       // Add user message to history

@@ -8,309 +8,290 @@ import io
 import os
 import traceback
 
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
+# ── Model paths ───────────────────────────────────────────────────────────────
+ORAL_MODEL_PATH = "./oral7_finetuned.h5"
+SKIN_MODEL_PATH = "./skin7_finetuned.h5"
 
-# ── Oral model config ──────────────────────────────────────────────────────────
-ORAL_MODEL_PATH   = "./stage2_final_model.keras"
-ORAL_WEIGHTS_PATH = "./stage2_best_weights.h5"
-ORAL_LABELS       = ["Calculus", "Caries", "Gingivitis", "Mouth Ulcer",
-                     "Tooth Discoloration", "Hypodontia", "Normal"]
-ORAL_IMG_SIZE     = (224, 224)
-
-# ── Skin model config ──────────────────────────────────────────────────────────
-SKIN_MODEL_PATH   = "./skinDiseaseVGG19.h5"
-SKIN_LABELS       = [
-    "Acne and Rosacea",
-    "Actinic Keratosis / Basal Cell Carcinoma",
-    "Eczema",
-    "Melanoma / Skin Cancer",
-    "Psoriasis / Lichen Planus",
-    "Tinea / Ringworm / Candidiasis",
-    "Urticaria / Hives",
-    "Nail Fungus",
+# ── Labels exactly as trained ─────────────────────────────────────────────────
+# From training report classification report
+ORAL_LABELS = [
+    "Calculus",
+    "Caries",
+    "Gingivitis",
+    "Healthy",
+    "Hypodontia",
+    "Tooth Discoloration",
+    "Ulcer",
 ]
-SKIN_IMG_SIZE     = (32, 32)
 
-# ── Eye model config ───────────────────────────────────────────────────────────
-EYE_MODEL_PATH    = "./eye_disease_model.h5"
-EYE_LABELS        = ["Cataract", "Diabetic Retinopathy", "Glaucoma", "Normal"]
-EYE_IMG_SIZE      = (224, 224)
+SKIN_LABELS = [
+    "Acne",
+    "Benign",
+    "Eczema",
+    "Infection",
+    "Healthy",
+    "Malign",
+    "Pigment",
+]
 
-oral_model = None
-skin_model = None
-eye_model  = None
-load_error = None
+# ── Image size from training report: 256×256 ──────────────────────────────────
+IMG_SIZE = (256, 256)
+
+oral_model      = None
+skin_model      = None
+oral_error      = None
+skin_error      = None
+oral_input_size = IMG_SIZE
+skin_input_size = IMG_SIZE
+
+CONFIDENCE_THRESHOLD = 20.0
 
 
-# ── Loaders ────────────────────────────────────────────────────────────────────
-def try_load_oral_model():
+# ── EfficientNet preprocessing (CRITICAL — must match training) ───────────────
+def efficientnet_preprocess(img: Image.Image, size: tuple) -> np.ndarray:
+    """
+    Preprocessing exactly as EfficientNet expects:
+    - Resize to training size
+    - Convert to float32
+    - Scale to [0, 255] range (EfficientNet does its own internal normalization)
+    - Do NOT divide by 255 manually — EfficientNet's preprocess_input does that
+    """
     import tensorflow as tf
+    img  = img.resize(size, Image.LANCZOS).convert("RGB")
+    arr  = np.array(img, dtype=np.float32)        # keep in 0-255 range
+    arr  = tf.keras.applications.efficientnet.preprocess_input(arr)
+    return arr
+
+
+def load_h5_model(path: str):
     try:
-        print("🔄 Oral Attempt 1: standard load...")
-        m = tf.keras.models.load_model(ORAL_MODEL_PATH, compile=False)
-        print("✅ Oral Attempt 1 succeeded!")
-        return m
-    except Exception as e:
-        print(f"❌ Oral Attempt 1 failed: {e}")
-    try:
-        print("🔄 Oral Attempt 2: with custom_objects...")
-        m = tf.keras.models.load_model(ORAL_MODEL_PATH, compile=False,
-            custom_objects={"Normalization": tf.keras.layers.Normalization})
-        print("✅ Oral Attempt 2 succeeded!")
-        return m
-    except Exception as e:
-        print(f"❌ Oral Attempt 2 failed: {e}")
-    try:
-        print("🔄 Oral Attempt 3: build EfficientNetB0 + load weights...")
-        base = tf.keras.applications.EfficientNetB0(include_top=False, weights=None, input_shape=(224, 224, 3))
-        x    = tf.keras.layers.GlobalAveragePooling2D()(base.output)
-        x    = tf.keras.layers.Dense(256, activation="relu")(x)
-        x    = tf.keras.layers.Dropout(0.3)(x)
-        out  = tf.keras.layers.Dense(len(ORAL_LABELS), activation="softmax")(x)
-        m    = tf.keras.Model(inputs=base.input, outputs=out)
-        if os.path.exists(ORAL_WEIGHTS_PATH):
-            m.load_weights(ORAL_WEIGHTS_PATH, by_name=True, skip_mismatch=True)
-            print("✅ Oral Attempt 3 succeeded with weights!")
-        else:
-            print("⚠️  No oral weights file found")
-        return m
-    except Exception as e:
-        print(f"❌ Oral Attempt 3 failed: {e}")
-        traceback.print_exc()
-    return None
-
-
-def try_load_skin_model():
-    import tensorflow as tf
-    try:
-        print("🔄 Skin: loading skinDiseaseVGG19.h5 ...")
-        m = tf.keras.models.load_model(SKIN_MODEL_PATH, compile=False)
-        print("✅ Skin model loaded!")
-        return m
-    except Exception as e:
-        print(f"❌ Skin model failed: {e}")
-        traceback.print_exc()
-    return None
-
-
-def try_load_eye_model():
-    import tensorflow as tf
-
-    # Attempt 1 — standard load
-    try:
-        print("🔄 Eye Attempt 1: standard load...")
-        m = tf.keras.models.load_model(EYE_MODEL_PATH, compile=False)
-        print("✅ Eye Attempt 1 succeeded!")
-        return m
-    except Exception as e:
-        print(f"❌ Eye Attempt 1 failed: {e}")
-
-    # Attempt 2 — patch batch_shape → shape in InputLayer config
-    try:
-        print("🔄 Eye Attempt 2: patching InputLayer batch_shape...")
-        import h5py, json
-
-        with h5py.File(EYE_MODEL_PATH, "r") as f:
-            model_config = json.loads(f.attrs["model_config"])
-
-        def patch_config(cfg):
-            if isinstance(cfg, dict):
-                if cfg.get("class_name") in ("InputLayer", "input_layer") and "batch_shape" in cfg.get("config", {}):
-                    batch_shape = cfg["config"].pop("batch_shape")
-                    cfg["config"]["shape"] = batch_shape[1:]  # remove batch dim
-                    cfg["config"].pop("sparse", None)
-                for v in cfg.values():
-                    patch_config(v)
-            elif isinstance(cfg, list):
-                for item in cfg:
-                    patch_config(item)
-
-        patch_config(model_config)
-
-        m = tf.keras.Model.from_config(model_config)
-        m.load_weights(EYE_MODEL_PATH, by_name=False, skip_mismatch=True)
-        print("✅ Eye Attempt 2 succeeded with patched config!")
-        return m
-    except Exception as e:
-        print(f"❌ Eye Attempt 2 failed: {e}")
-
-    # Attempt 3 — build CNN manually and load weights
-    try:
-        print("🔄 Eye Attempt 3: build VGG16 + load weights...")
-        base = tf.keras.applications.VGG16(
-            include_top=False, weights=None, input_shape=(224, 224, 3)
+        import tf_keras as keras
+        import tensorflow as tf
+        m = keras.models.load_model(
+            path,
+            compile=False,
+            custom_objects={
+                "preprocess_input": tf.keras.applications.efficientnet.preprocess_input
+            }
         )
-        x   = tf.keras.layers.GlobalAveragePooling2D()(base.output)
-        x   = tf.keras.layers.Dense(256, activation="relu")(x)
-        x   = tf.keras.layers.Dropout(0.3)(x)
-        out = tf.keras.layers.Dense(len(EYE_LABELS), activation="softmax")(x)
-        m   = tf.keras.Model(inputs=base.input, outputs=out)
-        m.load_weights(EYE_MODEL_PATH, by_name=True, skip_mismatch=True)
-        print("✅ Eye Attempt 3 succeeded with VGG16 + weights!")
+        print(f"✅ Loaded via tf_keras: {path}")
+        print(f"   Input shape : {m.input_shape}")
+        print(f"   Output shape: {m.output_shape}")
         return m
-    except Exception as e:
-        print(f"❌ Eye Attempt 3 failed: {e}")
+    except Exception as e1:
+        print(f"⚠️  tf_keras failed: {e1}")
+        try:
+            import tensorflow as tf
+            m = tf.keras.models.load_model(path, compile=False)
+            print(f"✅ Loaded via tf.keras: {path}")
+            print(f"   Input shape : {m.input_shape}")
+            print(f"   Output shape: {m.output_shape}")
+            return m
+        except Exception as e2:
+            print(f"❌ Both loaders failed")
+            print(f"   tf_keras : {e1}")
+            print(f"   tf.keras : {e2}")
+            traceback.print_exc()
+            return None
 
-    # Attempt 4 — build EfficientNetB0 + load weights
+
+def get_input_size(model) -> tuple:
     try:
-        print("🔄 Eye Attempt 4: build EfficientNetB0 + load weights...")
-        base = tf.keras.applications.EfficientNetB0(
-            include_top=False, weights=None, input_shape=(224, 224, 3)
-        )
-        x   = tf.keras.layers.GlobalAveragePooling2D()(base.output)
-        x   = tf.keras.layers.Dense(256, activation="relu")(x)
-        x   = tf.keras.layers.Dropout(0.3)(x)
-        out = tf.keras.layers.Dense(len(EYE_LABELS), activation="softmax")(x)
-        m   = tf.keras.Model(inputs=base.input, outputs=out)
-        m.load_weights(EYE_MODEL_PATH, by_name=True, skip_mismatch=True)
-        print("✅ Eye Attempt 4 succeeded with EfficientNetB0 + weights!")
-        return m
-    except Exception as e:
-        print(f"❌ Eye Attempt 4 failed: {e}")
-        traceback.print_exc()
-
-    return None
+        shape = model.input_shape
+        h, w  = int(shape[1]), int(shape[2])
+        print(f"   Auto-detected input size: {w}×{h}")
+        return (w, h)
+    except Exception:
+        print(f"   Could not detect size, using {IMG_SIZE}")
+        return IMG_SIZE
 
 
-# ── Lifespan ───────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global oral_model, skin_model, eye_model, load_error
-    print(f"📂 Working dir : {os.getcwd()}")
-    print(f"📄 Files       : {os.listdir('.')}")
+    global oral_model, skin_model, oral_error, skin_error
+    global oral_input_size, skin_input_size
 
-    m = try_load_oral_model()
-    if m: oral_model = m; print("🎉 Oral model ready!")
-    else: load_error = "Oral model failed."; print(f"❌ {load_error}")
+    print("=" * 60)
+    print(f"📂 Dir  : {os.getcwd()}")
+    print(f"📁 Files: {os.listdir('.')}")
+    print("=" * 60)
 
-    s = try_load_skin_model()
-    if s: skin_model = s; print("🎉 Skin model ready!")
-    else: print("❌ Skin model failed to load.")
+    # Load oral model
+    if os.path.exists(ORAL_MODEL_PATH):
+        size_mb = os.path.getsize(ORAL_MODEL_PATH) / 1024 / 1024
+        print(f"\n🦷 Loading oral model ({size_mb:.1f} MB)...")
+        oral_model = load_h5_model(ORAL_MODEL_PATH)
+        if oral_model:
+            oral_input_size = get_input_size(oral_model)
+        else:
+            oral_error = "Failed to load oral model"
+    else:
+        oral_error = f"Not found: {ORAL_MODEL_PATH}"
+        print(f"❌ {oral_error}")
 
-    e = try_load_eye_model()
-    if e: eye_model = e; print("🎉 Eye model ready!")
-    else: print("❌ Eye model failed to load.")
+    # Load skin model
+    if os.path.exists(SKIN_MODEL_PATH):
+        size_mb = os.path.getsize(SKIN_MODEL_PATH) / 1024 / 1024
+        print(f"\n🩺 Loading skin model ({size_mb:.1f} MB)...")
+        skin_model = load_h5_model(SKIN_MODEL_PATH)
+        if skin_model:
+            skin_input_size = get_input_size(skin_model)
+        else:
+            skin_error = "Failed to load skin model"
+    else:
+        skin_error = f"Not found: {SKIN_MODEL_PATH}"
+        print(f"❌ {skin_error}")
+
+    print("\n" + "=" * 60)
+    print(f"🦷 Oral : {'✅ Ready input=' + str(oral_input_size) if oral_model else '❌ ' + str(oral_error)}")
+    print(f"🩺 Skin : {'✅ Ready input=' + str(skin_input_size) if skin_model else '❌ ' + str(skin_error)}")
+    print("=" * 60 + "\n")
 
     yield
     print("👋 Shutting down.")
 
 
-# ── App ────────────────────────────────────────────────────────────────────────
-app = FastAPI(title="MediMate ML Server", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title="MediMate ML Server", version="5.0.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
 def health():
     return {
         "status": "ok",
-        "oral_model_loaded": oral_model is not None,
-        "skin_model_loaded": skin_model is not None,
-        "eye_model_loaded":  eye_model  is not None,
-        "load_error": load_error,
+        "oral_model": oral_model is not None,
+        "skin_model": skin_model is not None,
+        "oral_input_size": oral_input_size,
+        "skin_input_size": skin_input_size,
+        "oral_error": oral_error,
+        "skin_error": skin_error,
     }
 
 
-# ── Helper: generic predict ────────────────────────────────────────────────────
-def run_prediction(model, img_bytes, img_size, labels):
-    img       = Image.open(io.BytesIO(img_bytes)).convert("RGB").resize(img_size)
-    arr       = np.expand_dims(np.array(img) / 255.0, axis=0)
-    preds     = model.predict(arr, verbose=0)
-    idx       = int(np.argmax(preds[0]))
-    conf      = float(np.max(preds[0])) * 100
-    label     = labels[idx] if idx < len(labels) else f"Class {idx}"
-    all_preds = sorted(
-        [{"label": labels[i] if i < len(labels) else f"Class {i}",
-          "confidence": round(float(p) * 100, 2)} for i, p in enumerate(preds[0])],
-        key=lambda x: x["confidence"], reverse=True
-    )
-    return label, round(conf, 2), all_preds[:3]
+# ── Core prediction with TTA ──────────────────────────────────────────────────
+def predict(model, img_bytes: bytes, labels: list, input_size: tuple):
+    """
+    Use EfficientNet-correct preprocessing + TTA to get unbiased predictions.
+    """
+    import tensorflow as tf
+
+    image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    image = image.resize(input_size, Image.LANCZOS)
+    arr   = np.array(image, dtype=np.float32)
+
+    preprocess = tf.keras.applications.efficientnet.preprocess_input
+
+    # ── 5 TTA variants ────────────────────────────────────────────
+    variants = [
+        preprocess(arr.copy()),                               # original
+        preprocess(np.fliplr(arr.copy())),                   # horizontal flip
+        preprocess(np.flipud(arr.copy())),                   # vertical flip
+        preprocess(np.clip(arr.copy() * 1.05, 0, 255)),      # slightly brighter
+        preprocess(np.clip(arr.copy() * 0.95, 0, 255)),      # slightly darker
+    ]
+
+    batch    = np.stack(variants, axis=0)        # (5, H, W, 3)
+    all_pred = model.predict(batch, verbose=0)   # (5, num_classes)
+    preds    = np.mean(all_pred, axis=0)         # average
+
+    # ── Debug log ─────────────────────────────────────────────────
+    raw = {labels[i]: f"{preds[i]*100:.1f}%" for i in range(min(len(labels), len(preds)))}
+    print(f"📊 Raw preds: {raw}")
+
+    idx   = int(np.argmax(preds))
+    conf  = float(np.max(preds)) * 100
+    label = labels[idx] if idx < len(labels) else f"Class_{idx}"
+
+    if conf < CONFIDENCE_THRESHOLD:
+        label = "Uncertain"
+        print(f"⚠️  Low confidence ({conf:.1f}%) → Uncertain")
+    else:
+        print(f"✅ Result: {label} ({conf:.1f}%)")
+
+    all_p = sorted(
+        [{"label": labels[i] if i < len(labels) else f"Class_{i}",
+          "confidence": round(float(preds[i]) * 100, 2)}
+         for i in range(len(preds))],
+        key=lambda x: x["confidence"],
+        reverse=True,
+    )[:3]
+
+    return label, round(conf, 2), all_p
 
 
-# ── Oral ───────────────────────────────────────────────────────────────────────
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 @app.post("/predict/oral")
 async def predict_oral(file: UploadFile = File(...)):
     if oral_model is None:
-        raise HTTPException(503, detail=f"Oral model not loaded: {load_error}")
+        raise HTTPException(503, detail=f"Oral model not loaded: {oral_error}")
     if not file.content_type.startswith("image/"):
         raise HTTPException(400, detail="File must be an image.")
     try:
-        label, conf, all_preds = run_prediction(oral_model, await file.read(), ORAL_IMG_SIZE, ORAL_LABELS)
-        advice = get_oral_advice(label)
-        return JSONResponse({"success": True, "prediction": label, "confidence": conf,
+        contents = await file.read()
+        label, conf, all_p = predict(oral_model, contents, ORAL_LABELS, oral_input_size)
+        advice = oral_advice(label)
+        return JSONResponse({
+            "success": True, "prediction": label, "confidence": conf,
             "severity": advice["severity"], "description": advice["description"],
-            "recommendation": advice["recommendation"], "all_predictions": all_preds})
+            "recommendation": advice["recommendation"], "all_predictions": all_p,
+        })
     except Exception as e:
-        traceback.print_exc(); raise HTTPException(500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
 
 
-# ── Skin ───────────────────────────────────────────────────────────────────────
 @app.post("/predict/skin")
 async def predict_skin(file: UploadFile = File(...)):
     if skin_model is None:
-        raise HTTPException(503, detail="Skin model not loaded.")
+        raise HTTPException(503, detail=f"Skin model not loaded: {skin_error}")
     if not file.content_type.startswith("image/"):
         raise HTTPException(400, detail="File must be an image.")
     try:
-        label, conf, all_preds = run_prediction(skin_model, await file.read(), SKIN_IMG_SIZE, SKIN_LABELS)
-        advice = get_skin_advice(label)
-        return JSONResponse({"success": True, "prediction": label, "confidence": conf,
+        contents = await file.read()
+        label, conf, all_p = predict(skin_model, contents, SKIN_LABELS, skin_input_size)
+        advice = skin_advice(label)
+        return JSONResponse({
+            "success": True, "prediction": label, "confidence": conf,
             "severity": advice["severity"], "description": advice["description"],
-            "recommendation": advice["recommendation"], "all_predictions": all_preds})
+            "recommendation": advice["recommendation"], "all_predictions": all_p,
+        })
     except Exception as e:
-        traceback.print_exc(); raise HTTPException(500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
 
 
-# ── Eye ────────────────────────────────────────────────────────────────────────
-@app.post("/predict/eye")
-async def predict_eye(file: UploadFile = File(...)):
-    if eye_model is None:
-        raise HTTPException(503, detail="Eye model not loaded.")
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(400, detail="File must be an image.")
-    try:
-        label, conf, all_preds = run_prediction(eye_model, await file.read(), EYE_IMG_SIZE, EYE_LABELS)
-        advice = get_eye_advice(label)
-        return JSONResponse({"success": True, "prediction": label, "confidence": conf,
-            "severity": advice["severity"], "description": advice["description"],
-            "recommendation": advice["recommendation"], "all_predictions": all_preds})
-    except Exception as e:
-        traceback.print_exc(); raise HTTPException(500, detail=str(e))
+# ── Advice maps ───────────────────────────────────────────────────────────────
+def oral_advice(condition: str) -> dict:
+    m = {
+        "Calculus":           {"severity": "moderate", "description": "Dental calculus (tartar) buildup detected.",        "recommendation": "Visit a dentist for professional scaling and cleaning."},
+        "Caries":             {"severity": "high",     "description": "Tooth decay (dental caries) detected.",             "recommendation": "See a dentist as soon as possible to prevent further damage."},
+        "Gingivitis":         {"severity": "moderate", "description": "Gum inflammation (gingivitis) detected.",           "recommendation": "Brush twice daily, floss regularly, and visit a dentist."},
+        "Healthy":            {"severity": "none",     "description": "Your oral health looks great!",                     "recommendation": "Keep brushing twice daily and visit a dentist every 6 months."},
+        "Hypodontia":         {"severity": "moderate", "description": "Missing teeth (hypodontia) detected.",              "recommendation": "Consult an orthodontist or dentist for implant or bridge options."},
+        "Tooth Discoloration":{"severity": "low",      "description": "Tooth discoloration detected.",                    "recommendation": "Professional whitening may help. See a dentist for the cause."},
+        "Ulcer":              {"severity": "low",      "description": "Mouth ulcer detected.",                             "recommendation": "Use saltwater rinse. See a doctor if it persists over 3 weeks."},
+        "Uncertain":          {"severity": "unknown",  "description": "Could not determine condition clearly.",            "recommendation": "Please take a clearer photo in good lighting and try again."},
+    }
+    return m.get(condition, {"severity": "unknown", "description": f"{condition} detected.", "recommendation": "Consult a dentist."})
 
 
-# ── Advice maps ────────────────────────────────────────────────────────────────
-def get_oral_advice(condition: str) -> dict:
-    return {
-        "Calculus":            {"severity": "moderate", "description": "Dental calculus (tartar) detected.",    "recommendation": "Visit a dentist for professional scaling."},
-        "Caries":              {"severity": "high",     "description": "Tooth decay (cavities) detected.",      "recommendation": "See a dentist as soon as possible."},
-        "Gingivitis":          {"severity": "moderate", "description": "Gum inflammation detected.",            "recommendation": "Brush twice daily and floss regularly."},
-        "Mouth Ulcer":         {"severity": "low",      "description": "Mouth ulcer detected.",                 "recommendation": "Use saltwater rinse. See a doctor if persists over 3 weeks."},
-        "Tooth Discoloration": {"severity": "low",      "description": "Tooth discoloration detected.",         "recommendation": "Consult a dentist for whitening options."},
-        "Hypodontia":          {"severity": "moderate", "description": "Missing teeth detected.",               "recommendation": "Consult an orthodontist for treatment options."},
-        "Normal":              {"severity": "none",     "description": "No oral disease detected. Looks good!", "recommendation": "Keep brushing and visit a dentist every 6 months."},
-    }.get(condition, {"severity": "unknown", "description": f"{condition} detected.", "recommendation": "Consult a dentist."})
-
-
-def get_skin_advice(condition: str) -> dict:
-    return {
-        "Acne and Rosacea":                         {"severity": "low",      "description": "Acne or rosacea detected.",                      "recommendation": "Use gentle cleansers. Consult a dermatologist for persistent cases."},
-        "Actinic Keratosis / Basal Cell Carcinoma": {"severity": "high",     "description": "Possible pre-cancerous or cancerous skin lesion.", "recommendation": "See a dermatologist immediately for biopsy and treatment."},
-        "Eczema":                                   {"severity": "moderate", "description": "Eczema (atopic dermatitis) detected.",             "recommendation": "Moisturize regularly. Avoid triggers. Consult a dermatologist."},
-        "Melanoma / Skin Cancer":                   {"severity": "high",     "description": "Possible melanoma or skin cancer detected.",       "recommendation": "Seek urgent dermatology consultation. Do not delay."},
-        "Psoriasis / Lichen Planus":                {"severity": "moderate", "description": "Psoriasis or lichen planus detected.",             "recommendation": "Consult a dermatologist for topical or systemic treatment."},
-        "Tinea / Ringworm / Candidiasis":           {"severity": "low",      "description": "Fungal skin infection detected.",                  "recommendation": "Apply antifungal cream. Keep area clean and dry."},
-        "Urticaria / Hives":                        {"severity": "moderate", "description": "Urticaria (hives) detected.",                     "recommendation": "Identify and avoid allergens. Antihistamines may help."},
-        "Nail Fungus":                              {"severity": "low",      "description": "Nail fungal infection detected.",                  "recommendation": "Use antifungal nail treatment. Keep nails trimmed and dry."},
-    }.get(condition, {"severity": "unknown", "description": f"{condition} detected.", "recommendation": "Consult a dermatologist."})
-
-
-def get_eye_advice(condition: str) -> dict:
-    return {
-        "Cataract":             {"severity": "moderate", "description": "Cataract detected — clouding of the eye lens.",                    "recommendation": "Consult an ophthalmologist. Surgery is often effective and safe."},
-        "Diabetic Retinopathy": {"severity": "high",     "description": "Diabetic retinopathy — damage to retinal blood vessels detected.", "recommendation": "See an eye specialist urgently. Control blood sugar levels immediately."},
-        "Glaucoma":             {"severity": "high",     "description": "Glaucoma detected — increased pressure damaging the optic nerve.", "recommendation": "Seek immediate ophthalmology consultation to prevent vision loss."},
-        "Normal":               {"severity": "none",     "description": "No eye disease detected. Eyes appear healthy!",                    "recommendation": "Get a routine eye check every year, especially if diabetic or over 40."},
-    }.get(condition, {"severity": "unknown", "description": f"{condition} detected.", "recommendation": "Consult an ophthalmologist."})
+def skin_advice(condition: str) -> dict:
+    m = {
+        "Acne":       {"severity": "low",      "description": "Acne detected.",                          "recommendation": "Use gentle cleanser. See a dermatologist for severe cases."},
+        "Benign":     {"severity": "low",      "description": "Benign skin condition detected.",          "recommendation": "Monitor the area. Consult a dermatologist if it changes."},
+        "Eczema":     {"severity": "moderate", "description": "Eczema (atopic dermatitis) detected.",    "recommendation": "Use moisturizer, avoid triggers. Consult a dermatologist."},
+        "Infection":  {"severity": "high",     "description": "Skin infection detected.",                 "recommendation": "See a doctor promptly for appropriate treatment."},
+        "Healthy":    {"severity": "none",     "description": "Skin looks healthy!",                      "recommendation": "Maintain good skincare and use sunscreen daily."},
+        "Malign":     {"severity": "high",     "description": "Possible malignant skin condition.",       "recommendation": "See a dermatologist or oncologist immediately for evaluation."},
+        "Pigment":    {"severity": "low",      "description": "Pigmentation irregularity detected.",      "recommendation": "Consult a dermatologist for evaluation and treatment."},
+        "Uncertain":  {"severity": "unknown",  "description": "Could not determine condition clearly.",   "recommendation": "Please retake in good lighting and try again."},
+    }
+    return m.get(condition, {"severity": "unknown", "description": f"{condition} detected.", "recommendation": "Consult a dermatologist."})
 
 
 if __name__ == "__main__":

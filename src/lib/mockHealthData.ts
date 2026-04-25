@@ -82,26 +82,32 @@ export function getMockAlerts() {
 export function getMockNews() {
   return [
     {
-      source: "Health News India",
-      title: "New vaccination drive reaches rural districts",
-      description:
-        "A targeted campaign increases first-dose coverage in remote districts.",
-      url: "https://example.com/vaccination-drive",
-      publishedAt: new Date().toISOString(),
+      source: "Times Of India",
+      title: "Ahmedabad reports 106 diarrhoea,22 typhoid cases in first 5 days.",
+      description:"Ahmedabad reported 106 diarrhoea and 22 typhoid cases in the first five days, raising early public health concerns.",
+      url: "https://timesofindia.indiatimes.com/city/ahmedabad/ahmedabad-reports-106-diarrhoea-22-typhoid-cases-in-first-5-days/articleshow/130069741.cms?utm_source=chatgpt.com",
+      publishedAt: "2026-04-07"
     },
     {
-      source: "Medical Times",
-      title: "Study shows improved outcomes with early diagnosis",
-      description: "Early screening associated with better recovery rates.",
-      url: "https://example.com/early-diagnosis",
-      publishedAt: new Date().toISOString(),
+      source: "Times of India",
+      title: "11.3 lakh infans,24 lakh children vaccinated in 2025-26:Gujarat Govt.",
+      description: "Gujarat government reports vaccinating 11.3 lakh infants and 24 lakh children in 2025–26 under its immunization drive.",
+      url: "https://timesofindia.indiatimes.com/city/ahmedabad/11-3-lakh-infants-24-lakh-children-vaccinated-in-2025-26-gujarat-govt/articleshow/129594737.cms?utm_source=chatgpt.com",
+      publishedAt: "2026-03-16"
     },
     {
-      source: "Public Health Desk",
-      title: "Advisory: Preventive measures for monsoon-related illnesses",
-      description: "Guidance on preventing water-borne and vector-borne diseases.",
-      url: "https://example.com/monsoon-advisory",
-      publishedAt: new Date().toISOString(),
+      source: "Tribune India",
+      title: "HPV vaccine hesitancy rising in India due to misinformation: AIIMS doc",
+      description: "Misinformation is driving rising hesitancy toward the HPV vaccine in India, despite its proven safety and role in preventing cervical cancer.",
+      url: "https://share.google/G6tASbb38CF1a8XKp",
+      publishedAt: "2026-04-07"
+    },
+    {
+      source:"India today",
+      title:"Takeda Dengue vaccine recommmended for india amid rising dengue cases.",
+      description:"Takeda’s dengue vaccine is recommended for India to help tackle rising dengue cases.",
+      url:"https://share.google/pxQ13hzZrKDqjWxM0",
+      publishedAt: "2026-03-30"
     },
   ];
 }
